@@ -28,14 +28,16 @@ class MainActivity : AppCompatActivity() {
         override fun onOpened(camera: CameraDevice?) {
             mCamera = camera!!
             //这里拿到摄像头对象
-            initCameraDevice()
+            createCameraPreviewSession()
         }
 
         override fun onDisconnected(camera: CameraDevice?) {
-
+            camera?.close()
+            Log.e("aaron","open camera onDisconnected")
         }
 
         override fun onError(camera: CameraDevice?, error: Int) {
+            camera?.close()
             Log.e("aaron","open camera onError")
         }
 
@@ -44,7 +46,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        initCamera()
+        createCameraPreviewSession()
     }
 
     @SuppressLint("MissingPermission")
@@ -57,7 +59,7 @@ class MainActivity : AppCompatActivity() {
         cameraManager.openCamera("0", stateCallback, null)
     }
 
-    fun initCameraDevice(){
+    fun createCameraPreviewSession(){
 
     }
 
