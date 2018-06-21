@@ -130,7 +130,7 @@ class MainActivity : AppCompatActivity() {
         mCameraDevice.createCaptureSession(Arrays.asList(mSurfaceHolder.getSurface()),
          */
 
-        var mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        var mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD )
         //获取Surface显示预览数据
         val mSurface = Surface(mSurface)
         mPreviewRequestBuilder.addTarget(mSurface)
