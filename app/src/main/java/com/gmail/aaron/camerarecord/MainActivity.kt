@@ -4,7 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
-import android.hardware.camera2.CameraDevice.StateCallback
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
@@ -13,12 +12,10 @@ import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.TextureView
-import android.widget.Toast
 import com.gmail.aaron.camerarecord.util.PermissionsUtil
 import kotlinx.android.synthetic.main.activity_main.*
 import org.jetbrains.anko.toast
 import java.util.*
-import kotlin.math.log
 
 
 /**
@@ -122,14 +119,8 @@ class MainActivity : AppCompatActivity() {
 
     fun createCameraPreviewSession() {
         Log.e("aaron","open success")
-        /**
-        //设置了一个具有输出Surface的CaptureRequest.Builder。
-        mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-        mPreviewRequestBuilder.addTarget(mSurfaceHolder.getSurface());
-        //创建一个CameraCaptureSession来进行相机预览。
-        mCameraDevice.createCaptureSession(Arrays.asList(mSurfaceHolder.getSurface()),
-         */
 
+        //设置了一个具有输出Surface的CaptureRequest.Builder。
         var mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD )
         //获取Surface显示预览数据
         val mSurface = Surface(mSurface)
