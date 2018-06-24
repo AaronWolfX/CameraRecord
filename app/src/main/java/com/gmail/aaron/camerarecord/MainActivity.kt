@@ -1,147 +1,238 @@
 package com.gmail.aaron.camerarecord
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
-import android.hardware.camera2.*
-import android.support.v7.app.AppCompatActivity
+import android.hardware.Camera
 import android.os.Bundle
-import android.os.Handler
-import android.os.HandlerThread
+import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.view.Surface
-import android.view.SurfaceHolder
 import android.view.TextureView
 import com.gmail.aaron.camerarecord.util.PermissionsUtil
 import kotlinx.android.synthetic.main.activity_main.*
 import org.jetbrains.anko.toast
-import java.util.*
+import android.util.DisplayMetrics
+import android.R.attr.y
+import android.R.attr.x
+import android.media.MediaRecorder
+import android.os.Environment
+import android.view.MotionEvent
+import android.view.View
+import java.io.File
+import java.lang.reflect.Field
 
 
-/**
- * Camera2使用
- * 1.创建CameraManager对象
- * 2.CameraManager拿到摄像头列表cameraIdList
- * 3.获取cameraId
- * 4.通过cameraId拿到CameraDevice对象
- */
+class MainActivity : AppCompatActivity(), View.OnClickListener {
 
-class MainActivity : AppCompatActivity() {
-
-    lateinit var cameraManager: CameraManager
-    lateinit var mCamera: CameraDevice
-    lateinit var mBackgroundHandler:Handler
-    lateinit var holder:SurfaceHolder
-    lateinit var captureSession: CameraCaptureSession
-    lateinit var mSurface: SurfaceTexture
-
+    lateinit var camera: Camera
+    var mediaRecorder: MediaRecorder = MediaRecorder()
+    lateinit var optimalPreviewSize: Camera.Size
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         PermissionsUtil.getInstance().checkPermissions(this, object : PermissionsUtil.PermissionsListener {
             override fun agreePermission() {
-                initTextureView()
+                textureView.surfaceTextureListener = textureListener
             }
 
             override fun disagreePermission() {
                 toast("拒绝权限")
             }
-        }, Manifest.permission.CAMERA)
+        }, Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+
+        btnStart.setOnClickListener(this)
+        btnEnd.setOnClickListener(this)
     }
 
-    fun initTextureView(){
-
-        textureView.surfaceTextureListener = textureListener
-//        initCamera()
-    }
-
-
-    var textureListener:TextureView.SurfaceTextureListener = object :TextureView.SurfaceTextureListener{
+    /**
+     * 监听textureView 的初始化状态等
+     */
+    var textureListener: TextureView.SurfaceTextureListener = object : TextureView.SurfaceTextureListener {
         override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
-            Log.e("aaron","onSurfaceTextureSizeChanged")
+            Log.e("aaron", "onSurfaceTextureSizeChanged")
 
         }
 
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) {
-            Log.e("aaron","onSurfaceTextureUpdated")
+            Log.e("aaron", "onSurfaceTextureUpdated")
         }
 
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean {
-            Log.e("aaron","onSurfaceTextureDestroyed")
-            return surface==null
+            Log.e("aaron", "onSurfaceTextureDestroyed")
+            return surface == null
         }
 
 
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
-            Log.e("aaron","onSurfaceTextureAvailable")
-            mSurface  = surface!!
+            Log.e("aaron", "onSurfaceTextureAvailable")
             initCamera()
+
         }
-
     }
 
-    fun startBackgroundThread(){
-        Log.e("aaron","启动thread")
-        var backroundThread:HandlerThread = HandlerThread("background")
-        backroundThread.start()
-        mBackgroundHandler = Handler(backroundThread.looper)
-    }
-
-    @SuppressLint("MissingPermission")
     fun initCamera() {
-        startBackgroundThread()
-        cameraManager = getSystemService(android.content.Context.CAMERA_SERVICE) as CameraManager
-        cameraManager.cameraIdList.forEach {
-            Log.e("aaron", "cameraId:" + it)
-        }
+        //获取一个Camera实例，默认为后置摄像头
+        camera = Camera.open()
+        //设置默认参数
+        val parameters = camera.parameters
+        parameters.pictureFormat = ImageFormat.JPEG
+        optimalPreviewSize = getOptimalPreviewSize(camera.parameters.supportedPreviewSizes, textureView.width.toDouble(), textureView.height.toDouble())
+        Log.e("aaron", "size  width:" + optimalPreviewSize.width + "  height:" + optimalPreviewSize.height)
+        parameters.setPreviewSize(optimalPreviewSize.width, optimalPreviewSize.height)
+        camera.parameters = parameters
+        getCameraSize()
 
-        cameraManager.openCamera("0", stateCallback, null)
+        //修改当前方向
+        setCameraDisplayOrientation(Camera.CameraInfo.CAMERA_FACING_BACK)
+
+        //设置surfaceHolder
+        camera.setPreviewTexture(textureView.surfaceTexture)
+
+        //开始预览
+        camera.startPreview()
+
+        //对焦
+        autoFocus()
     }
 
-    var stateCallback = object : CameraDevice.StateCallback() {
-        override fun onOpened(camera: CameraDevice?) {
-            mCamera = camera!!
-            //这里拿到摄像头对象
-            createCameraPreviewSession()
+    /**
+     * 设置方向
+     */
+    fun setCameraDisplayOrientation(cameraId: Int) {
+        var info: Camera.CameraInfo = Camera.CameraInfo()
+        Camera.getCameraInfo(cameraId, info)
+        var rotation = windowManager.defaultDisplay.rotation
+        var degrees = 0
+        when (rotation) {
+            Surface.ROTATION_0 -> degrees = 0
+            Surface.ROTATION_90 -> degrees = 90
+            Surface.ROTATION_180 -> degrees = 180
+            Surface.ROTATION_270 -> degrees = 270
         }
-
-        override fun onDisconnected(camera: CameraDevice?) {
-            camera?.close()
-            Log.e("aaron", "open camera onDisconnected")
+        var result = 0
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            result = (info.orientation + degrees) % 360
+            result = (360 - result) % 360
+        } else {
+            result = (info.orientation - degrees + 360) % 360
         }
-
-        override fun onError(camera: CameraDevice?, error: Int) {
-            camera?.close()
-            Log.e("aaron", "open camera onError")
-        }
-
+        camera.setDisplayOrientation(result)
     }
 
-    fun createCameraPreviewSession() {
-        Log.e("aaron","open success")
+    /**
+     * 摄像头支持的分辨率
+     */
+    fun getCameraSize() {
+        val parameters = camera.parameters
+        for (supportedPreviewSize in parameters.supportedPreviewSizes) {
+            Log.e("aaronSize", "height:" + supportedPreviewSize.height + "  width:" + supportedPreviewSize.width)
+        }
+    }
 
-        //设置了一个具有输出Surface的CaptureRequest.Builder。
-        var mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD )
-        //获取Surface显示预览数据
-        val mSurface = Surface(mSurface)
-        mPreviewRequestBuilder.addTarget(mSurface)
-        mCamera.createCaptureSession(Arrays.asList(mSurface),object : CameraCaptureSession.StateCallback() {
-            override fun onConfigureFailed(session: CameraCaptureSession?) {
-                Log.e("aaron","onConfigureFailed")
+    fun autoFocus(){
+        //camera自动对焦
+        camera.autoFocus(object :Camera.AutoFocusCallback{
+            override fun onAutoFocus(success: Boolean, camera: Camera?) {
+                toast("自动对焦成功")
             }
 
-            override fun onConfigured(session: CameraCaptureSession?) {
-                Log.e("aaron","onConfigured")
-                captureSession = session!!
-                // 自动对焦应
-                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-                val request = mPreviewRequestBuilder.build()
-                captureSession.setRepeatingRequest(request,null,null)
-            }
-
-        },mBackgroundHandler)
-        Log.e("aaron","createCameraPreviewSession")
+        })
     }
 
+    /**
+     * 拿到屏幕最佳分辨率
+     */
+    fun getOptimalPreviewSize(sizes: MutableList<Camera.Size>, h: Double, w: Double): Camera.Size {
+        var ASPECT_TOLERANCE = 0.1
+        var targetRatio: Double = (w / h)
+        var largestArea: Double = w * h
+
+        var optimalSize: Camera.Size = sizes[1]
+        var minDiff = Double.MAX_VALUE
+        var getSize = false
+
+        var targetHeight = h
+
+        //Try to find an size match aspect ratio and size
+        for (size in sizes) {
+            var ratio: Double = (size.width.toDouble() / size.height.toDouble())
+            if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE) {
+                continue
+            }
+            if (Math.abs(size.height - targetHeight) < minDiff) {
+                optimalSize = size
+                getSize = true
+                minDiff = Math.abs(size.height - targetHeight)
+            }
+
+//            if (size.height * size.width > largestArea) {
+//                optimalSize = size
+//                getSize = true
+//                largestArea = size.height.toDouble() * size.width.toDouble()
+//            }
+
+        }
+
+        //Cannot find the one match the aspect ratio,
+        if (!getSize) {
+            minDiff = Double.MAX_VALUE
+            for (size in sizes) {
+                if (Math.abs(size.height - targetHeight) < minDiff) {
+                    optimalSize = size;
+                    minDiff = Math.abs(size.height - targetHeight)
+                }
+            }
+        }
+        return optimalSize
+    }
+
+
+    fun startRecord() {
+        camera.unlock()
+        mediaRecorder.setCamera(camera)
+        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
+        mediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA)
+
+        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+
+        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+        mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+
+        mediaRecorder.setVideoSize(optimalPreviewSize!!.width, optimalPreviewSize!!.height)
+        //帧频率
+        mediaRecorder.setVideoEncodingBitRate(5 * 1024 * 1024)
+        Log.e("aaronRecorder", "width:${optimalPreviewSize!!.width}  height:${optimalPreviewSize!!.height}")
+        var path = "${Environment.getExternalStorageDirectory()}${File.separator}aaron"
+        var file: File = File(path)
+        if (!file.exists()) {
+            file.mkdirs()
+        }
+        mediaRecorder.setOutputFile("$path${File.separator + System.currentTimeMillis()}.mp4")
+        mediaRecorder.prepare()
+        mediaRecorder.start()
+    }
+
+
+    fun stopRecord() {
+        mediaRecorder.stop()
+        mediaRecorder.reset()
+        mediaRecorder.release()
+        camera.reconnect()
+        camera.lock()
+        camera.startPreview()
+    }
+
+
+    override fun onClick(v: View?) {
+        when (v?.id) {
+            R.id.btnStart -> startRecord()
+            R.id.btnEnd -> stopRecord()
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent?): Boolean {
+        autoFocus()
+        return super.onTouchEvent(event)
+    }
 }
-
