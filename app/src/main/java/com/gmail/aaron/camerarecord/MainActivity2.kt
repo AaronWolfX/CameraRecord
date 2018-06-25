@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.TextureView
+import com.gmail.aaron.camerarecord.util.CameraUtil
 import com.gmail.aaron.camerarecord.util.PermissionsUtil
 import kotlinx.android.synthetic.main.activity_main2.*
 import org.jetbrains.anko.toast
@@ -30,8 +31,8 @@ class MainActivity2 : AppCompatActivity() {
 
     lateinit var cameraManager: CameraManager
     lateinit var mCamera: CameraDevice
-    lateinit var mBackgroundHandler:Handler
-    lateinit var holder:SurfaceHolder
+    lateinit var mBackgroundHandler: Handler
+    lateinit var holder: SurfaceHolder
     lateinit var captureSession: CameraCaptureSession
     lateinit var mSurface: SurfaceTexture
 
@@ -52,7 +53,7 @@ class MainActivity2 : AppCompatActivity() {
     /**
      * 初始化TextureView，准备完毕后开始启动摄像头
      */
-    fun initTextureView(){
+    fun initTextureView() {
 
         textureView.surfaceTextureListener = textureListener
 //        initCamera()
@@ -61,25 +62,25 @@ class MainActivity2 : AppCompatActivity() {
     /**
      * 监听textureView 的初始化状态等
      */
-    var textureListener:TextureView.SurfaceTextureListener = object :TextureView.SurfaceTextureListener{
+    var textureListener: TextureView.SurfaceTextureListener = object : TextureView.SurfaceTextureListener {
         override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
-            Log.e("aaron","onSurfaceTextureSizeChanged")
+            Log.e("aaron", "onSurfaceTextureSizeChanged")
 
         }
 
         override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) {
-            Log.e("aaron","onSurfaceTextureUpdated")
+            Log.e("aaron", "onSurfaceTextureUpdated")
         }
 
         override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean {
-            Log.e("aaron","onSurfaceTextureDestroyed")
-            return surface==null
+            Log.e("aaron", "onSurfaceTextureDestroyed")
+            return surface == null
         }
 
 
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
-            Log.e("aaron","onSurfaceTextureAvailable")
-            mSurface  = surface!!
+            Log.e("aaron", "onSurfaceTextureAvailable")
+            mSurface = surface!!
             initCamera()
         }
 
@@ -88,9 +89,9 @@ class MainActivity2 : AppCompatActivity() {
     /**
      * 启动摄像头在新一个线程操作
      */
-    fun startBackgroundThread(){
-        Log.e("aaron","启动thread")
-        var backroundThread:HandlerThread = HandlerThread("background")
+    fun startBackgroundThread() {
+        Log.e("aaron", "启动thread")
+        var backroundThread: HandlerThread = HandlerThread("background")
         backroundThread.start()
         mBackgroundHandler = Handler(backroundThread.looper)
     }
@@ -135,33 +136,39 @@ class MainActivity2 : AppCompatActivity() {
      * 拿到摄像头对象，开始预览
      */
     fun createCameraPreviewSession() {
-        Log.e("aaron","open success")
+        Log.e("aaron", "open success")
 
         //设置了一个具有输出Surface的CaptureRequest.Builder。
-        var mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD )
+        var mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
         //获取Surface显示预览数据
-        val mSurface = Surface(mSurface)
+        val cameraCharacteristics = cameraManager.getCameraCharacteristics("0")
+        val map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        var outputSizes = map.getOutputSizes(textureView::class.java)
+        val optimalPreviewSizeCamera2 = CameraUtil.getOptimalPreviewSizeCamera2(outputSizes, textureView.height.toDouble(), textureView.width.toDouble())
+        textureView.surfaceTexture.setDefaultBufferSize(optimalPreviewSizeCamera2.width, optimalPreviewSizeCamera2.height)
+
+        val mSurface = Surface(textureView.surfaceTexture)
         mPreviewRequestBuilder.addTarget(mSurface)
-        mCamera.createCaptureSession(Arrays.asList(mSurface),object : CameraCaptureSession.StateCallback() {
+        mCamera.createCaptureSession(Arrays.asList(mSurface), object : CameraCaptureSession.StateCallback() {
             override fun onConfigureFailed(session: CameraCaptureSession?) {
-                Log.e("aaron","onConfigureFailed")
+                Log.e("aaron", "onConfigureFailed")
             }
 
             override fun onConfigured(session: CameraCaptureSession?) {
-                Log.e("aaron","onConfigured")
+                Log.e("aaron", "onConfigured")
                 captureSession = session!!
                 // 自动对焦应
-                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 val request = mPreviewRequestBuilder.build()
-                captureSession.setRepeatingRequest(request,null,null)
+                captureSession.setRepeatingRequest(request, null, null)
             }
 
-        },mBackgroundHandler)
-        Log.e("aaron","createCameraPreviewSession")
+        }, mBackgroundHandler)
+        Log.e("aaron", "createCameraPreviewSession")
     }
 
 
-    var cameraCaptureSession:CameraCaptureSession.CaptureCallback = object :CameraCaptureSession.CaptureCallback(){
+    var cameraCaptureSession: CameraCaptureSession.CaptureCallback = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureProgressed(session: CameraCaptureSession?, request: CaptureRequest?, partialResult: CaptureResult?) {
             super.onCaptureProgressed(session, request, partialResult)
         }
