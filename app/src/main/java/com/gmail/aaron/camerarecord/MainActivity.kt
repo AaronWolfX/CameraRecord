@@ -12,22 +12,34 @@ import android.view.TextureView
 import com.gmail.aaron.camerarecord.util.PermissionsUtil
 import kotlinx.android.synthetic.main.activity_main.*
 import org.jetbrains.anko.toast
-import android.util.DisplayMetrics
-import android.R.attr.y
-import android.R.attr.x
 import android.media.MediaRecorder
 import android.os.Environment
 import android.view.MotionEvent
 import android.view.View
+import com.gmail.aaron.camerarecord.util.AvcEncoder
 import java.io.File
-import java.lang.reflect.Field
+import java.util.concurrent.ArrayBlockingQueue
 
 
-class MainActivity : AppCompatActivity(), View.OnClickListener {
+class MainActivity : AppCompatActivity(), View.OnClickListener, Camera.PreviewCallback {
 
     lateinit var camera: Camera
     var mediaRecorder: MediaRecorder = MediaRecorder()
     lateinit var optimalPreviewSize: Camera.Size
+    //待解码视频缓冲队列，静态成员！
+    private val yuvqueuesize = 10
+    val YUVQueue = ArrayBlockingQueue<ByteArray>(yuvqueuesize)
+    lateinit var avcEncoder: AvcEncoder
+
+
+    fun getYUVQueueSize(): Int {
+        return YUVQueue.size
+    }
+
+    fun YUVQueuePoll(): ByteArray? {
+        return YUVQueue.poll()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -67,7 +79,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
             Log.e("aaron", "onSurfaceTextureAvailable")
             initCamera()
-
+            avcEncoder = AvcEncoder(width, height, 30, 8500 * 1000)
+            avcEncoder.StartEncoderThread(this@MainActivity)
         }
     }
 
@@ -91,6 +104,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
 
         //开始预览
         camera.startPreview()
+
+        camera.setPreviewCallback(this)
 
         //对焦
         autoFocus()
@@ -130,9 +145,9 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
         }
     }
 
-    fun autoFocus(){
+    fun autoFocus() {
         //camera自动对焦
-        camera.autoFocus(object :Camera.AutoFocusCallback{
+        camera.autoFocus(object : Camera.AutoFocusCallback {
             override fun onAutoFocus(success: Boolean, camera: Camera?) {
                 toast("自动对焦成功")
             }
@@ -234,5 +249,19 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         autoFocus()
         return super.onTouchEvent(event)
+    }
+
+    /**
+     * 摄像头回调   将数据返回
+     */
+    override fun onPreviewFrame(data: ByteArray?, camera: Camera?) {
+        putYUVData(data,data!!.size)
+    }
+
+    fun putYUVData(data: ByteArray?, size: Int) {
+        if (YUVQueue.size>=10){
+            YUVQueue.poll()
+        }
+        YUVQueue.add(data)
     }
 }
